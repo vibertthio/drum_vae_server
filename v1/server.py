@@ -46,7 +46,6 @@ load preset
 fn_latent_selected = './static/static_20181015_235336.npy'
 latent_selected_np = np.load(fn_latent_selected)
 
-
 '''
 utils
 '''
