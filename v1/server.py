@@ -104,10 +104,12 @@ api route
 @app.route('/rand', methods=['POST', 'GET'])
 def rand():
     with torch.no_grad():
+        global latent_selected_np
         data = iter(train_loader).next()[0]
 
         data = Variable(data).type(torch.float32).to(device)
         latent = vae._enc_mu(encoder(data))
+        latent_selected_np = latent
         
         # save data
         # savaTensor2Array(latent)
