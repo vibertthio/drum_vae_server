@@ -9,3 +9,5 @@ pyderproject
 
 /**/data
 /**/temp
+
+.DS_Store

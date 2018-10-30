@@ -17,8 +17,13 @@ def printDrumRoll(roll):
             else:
                 print('*', end='')
         print()
+
+def printLatent(lt):
+    print('latent:')
+    for i, value in enumerate(lt):
+        print('[{}]: {}'.format(i, value))
         
-addr = 'http://localhost:5000'
+addr = 'http://localhost:5001'
 test_url = addr + '/rand'
 content_type = 'application/json'
 headers = {'content-type': content_type}
@@ -27,12 +32,14 @@ response = requests.get(
     test_url,
     headers=headers)
 
-print(response)
-
 r_json = json.loads(response.text)
 drum_rolls = r_json['result']
+latent = r_json['latent']
+
 for i, d in enumerate(drum_rolls):
     x = i % 3 - 1
     y = i // 3 - 1
-    print('({}, {})'.format(x, y))
-    printDrumRoll(d)
+    if x == 0 and y == 0:
+        print('({}, {})'.format(x, y))
+        printDrumRoll(d)
+        printLatent(latent[i])

@@ -2,7 +2,7 @@ import requests
 import numpy as np
 import json
 
-addr = 'http://localhost:5000'
+addr = 'http://localhost:5002'
 test_url = addr + '/api/test'
 content_type = 'application/json'
 headers = {'content-type': content_type}
