@@ -9,11 +9,12 @@ from pypianoroll import Multitrack, Track
 import torch.utils.data as Data
 from vae_rnn import *
 
+'''
+app setup
+'''
 app = Flask(__name__)
 app.config['ENV'] = 'development'
 CORS(app)
-dims = [3, 2]
-
 
 '''
 constants
@@ -56,7 +57,9 @@ load preset
 '''
 fn_latent_selected = './static/static_20181015_235336.npy'
 latent_selected_np = np.load(fn_latent_selected)
-
+data_np = decoder(torch.from_numpy(
+    latent_selected_np).to(device)).cpu().data.numpy()
+data_np_orig = np.copy(data_np)
 
 '''
 utils
@@ -68,7 +71,7 @@ def printDrumRoll(roll):
         for i, w in enumerate(r):
             if i > 0 and i % 16 == 0:
                 print('|', end='')
-            if w == 0:
+            if w < 0.2:
                 print('_', end='')
             else:
                 print('*', end='')
@@ -80,43 +83,49 @@ def savaTensor2Array(tensor):
     filename = './static/static_' + t + '.npy'
     np.save(filename, arr)
 
-def decodeLatent(latent, send_latent=True):
+def decodeLatent(latent, update_data=False):
     '''
     Return the jsonified object of two things:
-    1) the drum arrays around the specified latent
+    1) the drum arrays of the latent
     2) the latent vector
 
     Keyword arguments:
     latent -- the latent vector of the center point
     '''
-    out = decoder(latent)
-    out_np = out.cpu().data.numpy()
-    out_np = np.where(out_np > GLOBAL_THRESHOLD, 128, 0)
-    out_concat = np.zeros((9, 96, 9))
-    out_latent = []
-    
-    for i in range(9):
-        x = i % 3 - 1
-        y = i // 3 - 1
+    out = decoder(latent).cpu().data.numpy()
+    out_result = out[0].tolist()
+    out_latent = latent.cpu().data.numpy()[0].tolist()
 
-        latent_shift = latent.cpu().data.numpy()
-        shift = np.zeros(latent_shift.shape, dtype=np.float32)
-        shift[0][dims[1]] = x * STEP_UNIT * 100
-        shift[0][dims[0]] = y * STEP_UNIT * 100
-        latent_shift = latent_shift + shift
+    if update_data:
+        global data_np
+        data_np = out
 
-        latent_shift = torch.from_numpy(latent_shift).to(device)
-        o = decoder(latent_shift)
-        out_latent.append(latent_shift.cpu().data.numpy()[0].tolist())
-
-        o = o[0].cpu().data.numpy()
-        # gate the output
-        # o = np.where(o > 0.5, 1, 0)
-        out_concat[i] = o
-
-    out_concat = out_concat.tolist()
     response = {
-        'result': out_concat,
+        'result': out_result,
+        'latent': out_latent,
+    }
+    response_pickled = json.dumps(response)
+    return response_pickled
+
+def encodeData(data, update_latent=True):
+    '''
+    Return the jsonified object of two things:
+    1) the drum arrays of the latent
+    2) the latent vector
+
+    Keyword arguments:
+    latent -- the latent vector of the center point
+    '''
+    latent = vae._enc_mu(encoder(data)).cpu().data.numpy()
+    out_result = data.cpu().data.numpy()[0].tolist()
+    out_latent = latent[0].tolist()
+
+    if update_latent:
+        global latent_selected_np
+        latent_selected_np = latent
+
+    response = {
+        'result': out_result,
         'latent': out_latent,
     }
     response_pickled = json.dumps(response)
@@ -126,7 +135,7 @@ def decodeLatent(latent, send_latent=True):
 '''
 api route
 '''
-@app.route('/rand', methods=['POST', 'GET'])
+@app.route('/rand', methods=['GET'])
 def rand():
     '''random
     1. get next sample from training data
@@ -134,69 +143,30 @@ def rand():
     '''
     with torch.no_grad():
         global latent_selected_np
+        global data_np
         data = iter(train_loader).next()[0]
+        data_np = data.cpu().data.numpy()
 
         data = Variable(data).type(torch.float32).to(device)
         latent = vae._enc_mu(encoder(data))
         latent_selected_np = latent.cpu().data.numpy()
 
-        # save data
-        # savaTensor2Array(latent)
-
-    response_pickled = decodeLatent(latent)
-    return Response(response=response_pickled, status=200, mimetype="application/json")
+        response_pickled = decodeLatent(latent)
+        return Response(response=response_pickled, status=200, mimetype="application/json")
 
 @app.route('/static', methods=['GET'], endpoint='static_1')
 def static():
     with torch.no_grad():
         global latent_selected_np
-        global dims
+        global data_np
+        data_np = np.copy(data_np_orig)
         latent_selected_np = np.load(fn_latent_selected)
-        dims = [3, 2]
         latent = torch.from_numpy(latent_selected_np).to(device)
 
-    response_pickled = decodeLatent(latent)
-    return Response(response=response_pickled, status=200, mimetype="application/json")
+        response_pickled = decodeLatent(latent)
+        return Response(response=response_pickled, status=200, mimetype="application/json")
 
-@app.route('/dim/<d1>/<d2>', methods=['GET'], endpoint='dim_1')
-def change_dim(d1, d2):
-    with torch.no_grad():
-        ''' change the choosen dimension '''
-        global latent_selected_np
-        global dims
-        dims[0] = int(d1)
-        dims[1] = int(d2)
-        latent = torch.from_numpy(latent_selected_np).to(device)
-
-    response_pickled = decodeLatent(latent)
-    return Response(response=response_pickled, status=200, mimetype="application/json")
-
-@app.route('/static/<dir>', methods=['GET'], endpoint='static_direction_1', defaults={'step': str(STEP_UNIT)})
-@app.route('/static/<dir>/<step>', methods=['GET'], endpoint='static_direction_1')
-def static_direction(dir, step):
-    '''Move the selected latent in the dims choosen
-
-    Keyword arguments:
-    dir -- the direction of moving
-    step -- the distance of each step
-    '''
-    with torch.no_grad():
-        global latent_selected_np
-        stp = float(step)
-        if dir == '0':
-            latent_selected_np[0][dims[0]] += stp
-        elif dir == '1':
-            latent_selected_np[0][dims[0]] -= stp
-        elif dir == '2':
-            latent_selected_np[0][dims[1]] += stp
-        elif dir == '3':
-            latent_selected_np[0][dims[1]] -= stp
-        latent = torch.from_numpy(latent_selected_np).to(device)
-
-    response_pickled = decodeLatent(latent)
-    return Response(response=response_pickled, status=200, mimetype="application/json")
-
-@app.route('/adjust/<dim>/<value>', methods=['GET'], endpoint='adjust_latent_1')
+@app.route('/adjust-latent/<dim>/<value>', methods=['GET'], endpoint='adjust_latent_1')
 def adjust_latent(dim, value):
     '''Adjust the selected dimension of the latent 
 
@@ -211,12 +181,36 @@ def adjust_latent(dim, value):
         latent_selected_np[0][d] = v
         latent = torch.from_numpy(latent_selected_np).to(device)
 
-    response_pickled = decodeLatent(latent)
-    return Response(response=response_pickled, status=200, mimetype="application/json")
+        response_pickled = decodeLatent(latent, update_data=True)
+        return Response(response=response_pickled, status=200, mimetype="application/json")
+
+
+@app.route('/adjust-data/<i>/<j>/<value>', methods=['GET'], endpoint='adjust_data_1')
+def adjust_data(i, j, value):
+    '''Adjust the selected dimension of the latent 
+
+    Keyword arguments:
+    i, j -- the adjusted position of data
+    value -- the value assigned
+    '''
+    with torch.no_grad():
+        global latent_selected_np
+        global data_np
+
+        i_int = int(float(i))
+        j_int = int(float(j))
+        value_float = float(value)
+
+        data_np[0][i_int][j_int] = value_float
+        data_np = np.float32(np.where(data_np > 0.2, 1.0, 0))
+        data = torch.from_numpy(data_np).to(device)
+
+        response_pickled = encodeData(data)
+        return Response(response=response_pickled, status=200, mimetype="application/json")
 
 
 '''
 start app
 '''
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=5001)
+    app.run(host="0.0.0.0", port=5002)
