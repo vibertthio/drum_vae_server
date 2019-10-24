@@ -32,7 +32,11 @@ model = [m for m in os.listdir(path) if '.pt' in m][0]
 encoder = Encoder().to(device)
 decoder = Decoder().to(device)
 vae = VAE(encoder, decoder).to(device)
-vae.load_state_dict(torch.load(path + model))
+
+if use_cuda:
+    vae.load_state_dict(torch.load(path + model))
+else:
+    vae.load_state_dict(torch.load(path + model, map_location='cpu'))
 
 
 '''
@@ -209,6 +213,20 @@ def adjust_data(i, j, value):
         response_pickled = encodeData(data)
         return Response(response=response_pickled, status=200, mimetype="application/json")
 
+
+
+@app.route('/adjust-latent', methods=['POST'])
+def post_adjust_latent():
+    # r = request.json
+    # r_json = json.loads(r)
+    r_json = request.json
+    latent = np.asarray(r_json['latent'])
+
+    with torch.no_grad():
+        latent = torch.from_numpy(latent).to(device)
+
+        response_pickled = decodeLatent(latent, update_data=True)
+        return Response(response=response_pickled, status=200, mimetype="application/json")
 
 '''
 start app

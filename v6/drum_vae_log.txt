@@ -1,0 +1,25 @@
+nohup: ignoring input
+run on CPU
+ * Serving Flask app "server" (lazy loading)
+ * Environment: development
+ * Debug mode: off
+Traceback (most recent call last):
+  File "server.py", line 184, in <module>
+    app.run(host="0.0.0.0", port=5002)
+  File "/home/vibertthio/.pyenv/versions/drum-vae/lib/python3.6/site-packages/flask/app.py", line 943, in run
+    run_simple(host, port, self, **options)
+  File "/home/vibertthio/.pyenv/versions/drum-vae/lib/python3.6/site-packages/werkzeug/serving.py", line 814, in run_simple
+    inner()
+  File "/home/vibertthio/.pyenv/versions/drum-vae/lib/python3.6/site-packages/werkzeug/serving.py", line 774, in inner
+    fd=fd)
+  File "/home/vibertthio/.pyenv/versions/drum-vae/lib/python3.6/site-packages/werkzeug/serving.py", line 660, in make_server
+    passthrough_errors, ssl_context, fd=fd)
+  File "/home/vibertthio/.pyenv/versions/drum-vae/lib/python3.6/site-packages/werkzeug/serving.py", line 577, in __init__
+    self.address_family), handler)
+  File "/home/vibertthio/.pyenv/versions/3.6.4/lib/python3.6/socketserver.py", line 453, in __init__
+    self.server_bind()
+  File "/home/vibertthio/.pyenv/versions/3.6.4/lib/python3.6/http/server.py", line 136, in server_bind
+    socketserver.TCPServer.server_bind(self)
+  File "/home/vibertthio/.pyenv/versions/3.6.4/lib/python3.6/socketserver.py", line 467, in server_bind
+    self.socket.bind(self.server_address)
+OSError: [Errno 98] Address already in use

@@ -26,7 +26,7 @@ GLOBAL_THRESHOLD = 0.2
 '''
 laod model
 '''
-path = '/home/vibertthio/local_dir/vibertthio/drum_generation/server/models/'
+path = '/home/vibertthio/local_dir/vibertthio/drum_generation/server/v4/models/conditional/'
 model = [m for m in os.listdir(path) if '.pt' in m][0]
 # model = 'vae_L1E-02_beta2E+01_beat48_loss2E+01_tanh_gru32_e10_b256_hd64-32_20181210_152332.pt'
 encoder = Encoder().to(device)
@@ -38,8 +38,10 @@ vae.load_state_dict(torch.load(path + model))
 '''
 load data
 '''
+genre = 10
 genres = [x for x in os.listdir(
     '/home/vibertthio/local_dir/vibertthio/drum_generation/server/data/') if '.npy' in x]
+print(genres)
 train_x_np = np.load(
     '/home/vibertthio/local_dir/vibertthio/drum_generation/server/data/' + genres[7])
 train_x = torch.from_numpy(train_x_np).type(torch.FloatTensor)
@@ -59,7 +61,7 @@ load preset
 fn_latent_selected = './static/static_20181015_235336.npy'
 latent_selected_np = np.load(fn_latent_selected)
 data_np = decoder(torch.from_numpy(
-    latent_selected_np).to(device)).cpu().data.numpy()
+    latent_selected_np).to(device), genre).cpu().data.numpy()
 data_np_orig = np.copy(data_np)
 
 '''
@@ -93,7 +95,7 @@ def decodeLatent(latent, update_data=False):
     Keyword arguments:
     latent -- the latent vector of the center point
     '''
-    out = decoder(latent).cpu().data.numpy()
+    out = decoder(latent, genre).cpu().data.numpy()
     out_result = out[0].tolist()
     out_latent = latent.cpu().data.numpy()[0].tolist()
 
@@ -209,9 +211,26 @@ def adjust_data(i, j, value):
         response_pickled = encodeData(data)
         return Response(response=response_pickled, status=200, mimetype="application/json")
 
+@app.route('/adjust-genre/<g>', methods=['GET'], endpoint='adjust_genre_1')
+def adjust_latent(g):
+    '''Adjust the selected dimension of the latent
+
+    Keyword arguments:
+    dim -- the dimension adjusted
+    value -- the value assigned
+    '''
+    with torch.no_grad():
+        global genre
+        genre = int(float(g))
+        latent = torch.from_numpy(latent_selected_np).to(device)
+
+        response_pickled = decodeLatent(latent, update_data=True)
+        return Response(response=response_pickled, status=200, mimetype="application/json")
+
+
 
 '''
 start app
 '''
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=5002)
+    app.run(host="0.0.0.0", port=5010)
