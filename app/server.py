@@ -28,10 +28,15 @@ laod model
 '''
 path = '/home/vibertthio/local_dir/vibertthio/drum_generation/server/models/'
 model = [m for m in os.listdir(path) if '.pt' in m][0]
+# model = 'vae_L1E-02_beta2E+01_beat48_loss2E+01_tanh_gru32_e10_b256_hd64-32_20181210_152332.pt'
 encoder = Encoder().to(device)
 decoder = Decoder().to(device)
 vae = VAE(encoder, decoder).to(device)
-vae.load_state_dict(torch.load(path + model))
+
+if use_cuda:
+    vae.load_state_dict(torch.load(path + model))
+else:
+    vae.load_state_dict(torch.load(path + model, map_location='cpu'))
 
 
 '''
@@ -40,7 +45,7 @@ load data
 genres = [x for x in os.listdir(
     '/home/vibertthio/local_dir/vibertthio/drum_generation/server/data/') if '.npy' in x]
 train_x_np = np.load(
-    '/home/vibertthio/local_dir/vibertthio/drum_generation/server/data/' + genres[7])
+    '/home/vibertthio/local_dir/vibertthio/drum_generation/server/data/' + genres[9]) #2:rock, 7:electronic, 9:pop
 train_x = torch.from_numpy(train_x_np).type(torch.FloatTensor)
 train_dataset = Data.TensorDataset(train_x)
 train_loader = Data.DataLoader(
@@ -59,7 +64,6 @@ fn_latent_selected = './static/static_20181015_235336.npy'
 latent_selected_np = np.load(fn_latent_selected)
 data_np = decoder(torch.from_numpy(
     latent_selected_np).to(device)).cpu().data.numpy()
-data_np_orig = np.copy(data_np)
 
 '''
 utils
@@ -83,7 +87,7 @@ def savaTensor2Array(tensor):
     filename = './static/static_' + t + '.npy'
     np.save(filename, arr)
 
-def decodeLatent(latent, update_data=False):
+def decodeLatent(latent):
     '''
     Return the jsonified object of two things:
     1) the drum arrays of the latent
@@ -96,10 +100,6 @@ def decodeLatent(latent, update_data=False):
     out_result = out[0].tolist()
     out_latent = latent.cpu().data.numpy()[0].tolist()
 
-    if update_data:
-        global data_np
-        data_np = out
-
     response = {
         'result': out_result,
         'latent': out_latent,
@@ -107,7 +107,7 @@ def decodeLatent(latent, update_data=False):
     response_pickled = json.dumps(response)
     return response_pickled
 
-def encodeData(data, update_latent=True):
+def encodeData(data):
     '''
     Return the jsonified object of two things:
     1) the drum arrays of the latent
@@ -119,10 +119,6 @@ def encodeData(data, update_latent=True):
     latent = vae._enc_mu(encoder(data)).cpu().data.numpy()
     out_result = data.cpu().data.numpy()[0].tolist()
     out_latent = latent[0].tolist()
-
-    if update_latent:
-        global latent_selected_np
-        latent_selected_np = latent
 
     response = {
         'result': out_result,
@@ -142,14 +138,9 @@ def rand():
     2. return the outputs around the random sample
     '''
     with torch.no_grad():
-        global latent_selected_np
-        global data_np
         data = iter(train_loader).next()[0]
-        data_np = data.cpu().data.numpy()
-
         data = Variable(data).type(torch.float32).to(device)
         latent = vae._enc_mu(encoder(data))
-        latent_selected_np = latent.cpu().data.numpy()
 
         response_pickled = decodeLatent(latent)
         return Response(response=response_pickled, status=200, mimetype="application/json")
@@ -157,57 +148,34 @@ def rand():
 @app.route('/static', methods=['GET'], endpoint='static_1')
 def static():
     with torch.no_grad():
-        global latent_selected_np
-        global data_np
-        data_np = np.copy(data_np_orig)
-        latent_selected_np = np.load(fn_latent_selected)
-        latent = torch.from_numpy(latent_selected_np).to(device)
+        latent = np.load(fn_latent_selected)
+        latent = torch.from_numpy(latent).to(device)
 
         response_pickled = decodeLatent(latent)
         return Response(response=response_pickled, status=200, mimetype="application/json")
 
-@app.route('/adjust-latent/<dim>/<value>', methods=['GET'], endpoint='adjust_latent_1')
-def adjust_latent(dim, value):
-    '''Adjust the selected dimension of the latent 
-
-    Keyword arguments:
-    dim -- the dimension adjusted
-    value -- the value assigned
-    '''
+@app.route('/adjust-latent', methods=['POST'], endpoint='adjust_latent_2')
+def post_adjust_latent():
     with torch.no_grad():
-        global latent_selected_np
-        d = int(float(dim))
-        v = float(value)
-        latent_selected_np[0][d] = v
-        latent = torch.from_numpy(latent_selected_np).to(device)
+        r_json = request.json
+        latent = latent_selected_np
+        latent[0] = np.asarray(r_json['latent'])
 
-        response_pickled = decodeLatent(latent, update_data=True)
+        latent = torch.from_numpy(latent).to(device)
+        response_pickled = decodeLatent(latent)
         return Response(response=response_pickled, status=200, mimetype="application/json")
 
 
-@app.route('/adjust-data/<i>/<j>/<value>', methods=['GET'], endpoint='adjust_data_1')
-def adjust_data(i, j, value):
-    '''Adjust the selected dimension of the latent 
-
-    Keyword arguments:
-    i, j -- the adjusted position of data
-    value -- the value assigned
-    '''
+@app.route('/adjust-data', methods=['POST'], endpoint='adjust_data_2')
+def post_adjust_data():
     with torch.no_grad():
-        global latent_selected_np
-        global data_np
+        r_json = request.json
+        data = data_np
+        data[0] = np.asarray(r_json['data'])
 
-        i_int = int(float(i))
-        j_int = int(float(j))
-        value_float = float(value)
-
-        data_np[0][i_int][j_int] = value_float
-        data_np = np.float32(np.where(data_np > 0.2, 1.0, 0))
-        data = torch.from_numpy(data_np).to(device)
-
+        data = torch.from_numpy(data).to(device)
         response_pickled = encodeData(data)
         return Response(response=response_pickled, status=200, mimetype="application/json")
-
 
 '''
 start app
